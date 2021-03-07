@@ -7,6 +7,7 @@ con.execute("CREATE TABLE e(source INTEGER, target INTEGER, value DOUBLE)")
 con.execute("CREATE TABLE cdlp0(id INTEGER, label INTEGER)")
 con.execute("CREATE TABLE cdlp1(id INTEGER, label INTEGER)")
 con.execute("CREATE TABLE cdlp2(id INTEGER, label INTEGER)")
+# TODO: more CDLP tables and just drop them
 
 graph = "/home/szarnyasg/graphs/example-undirected"
 undirected = True
@@ -105,6 +106,25 @@ con.execute("""
                 GROUP BY e.source, cdlp1.label
             ) AS x
         ) y
+    WHERE seqnum = 1
+    """)
+results = con.fetchall()
+for result in results:
+    print(result)
+
+print("=====================")
+con.execute("""
+    SELECT id, label FROM (
+        SELECT
+            e.source AS id,
+            cdlp1.label AS label,
+            ROW_NUMBER() OVER (PARTITION BY e.source ORDER BY count(*) DESC, cdlp1.label ASC) AS seqnum
+        FROM e, cdlp1
+        WHERE cdlp1.id = e.target
+        GROUP BY
+            e.source,
+            cdlp1.label
+        ) most_frequent_labels
     WHERE seqnum = 1
     """)
 results = con.fetchall()
