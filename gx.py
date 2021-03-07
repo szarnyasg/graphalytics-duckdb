@@ -2,6 +2,10 @@ import duckdb
 
 con = duckdb.connect(database=':memory:', read_only=False)
 
+bfs_source = 2
+sssp_source = 2
+pr_d = 0.85
+pr_iterations = 2
 cdlp_iterations = 2
 
 con.execute("CREATE TABLE v(id INTEGER)")
@@ -68,3 +72,23 @@ con.execute(f"SELECT * FROM cdlp{cdlp_iterations}")
 results = con.fetchall()
 for result in results:
     print(result)
+
+# PR
+print("====================")
+print("PR")
+print("====================")
+
+# SSSP
+print("====================")
+print("SSSP")
+print("====================")
+
+# BFS
+print("====================")
+print("BFS")
+print("====================")
+
+# WCC
+print("====================")
+print("WCC")
+print("====================")
