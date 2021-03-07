@@ -77,18 +77,24 @@ for result in results:
 print("====================")
 print("PR")
 print("====================")
+# should be relatively straightforward to implement using pr_iterations join/aggregate queries
 
 # SSSP
 print("====================")
 print("SSSP")
 print("====================")
+# http://aprogrammerwrites.eu/?p=1391
+# http://aprogrammerwrites.eu/?p=1415
+# https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
 
 # BFS
 print("====================")
 print("BFS")
 print("====================")
+# use recursive SQL or a sequence of joins?
 
 # WCC
 print("====================")
 print("WCC")
 print("====================")
+# check out "In-database connected component analysis", https://arxiv.org/pdf/1802.09478.pdf
