@@ -50,6 +50,8 @@ con.execute("""
     FROM v;
     """)
 
+# We select the minimum mode value (the smallest one from the most frequent labels).
+# We use the cdlp{i} table to compute cdlp{i+1}, then throw away the cdlp{i} table.
 for i in range(0, cdlp_iterations):
     con.execute(f"""
     INSERT INTO cdlp{i+1}
