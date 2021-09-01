@@ -1,6 +1,6 @@
 # graphalytics-duckdb
 
-[Graphalytics specification](https://ldbc.github.io/ldbc_graphalytics_docs/graphalytics_spec.pdf)
+[Graphalytics specification](https://ldbcouncil.org/ldbc_graphalytics_docs/graphalytics_spec.pdf)
 
 ## Getting started
 
