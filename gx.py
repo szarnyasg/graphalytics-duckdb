@@ -10,11 +10,14 @@ cdlp_iterations = 2
 
 con.execute("CREATE TABLE v(id INTEGER)")
 con.execute("CREATE TABLE e(source INTEGER, target INTEGER, value DOUBLE)")
+# maybe do tic-toc style interations?
 for i in range(0, cdlp_iterations+1):
     con.execute(f"CREATE TABLE cdlp{i}(id INTEGER, label INTEGER)")
 
-graph = "/home/szarnyasg/graphs/example-undirected"
-undirected = True
+#graph = "/home/szarnyasg/graphs/example-undirected"
+#undirected = True
+graph = "/home/szarnyasg/graphs/example-directed"
+undirected = False
 
 con.execute(f"COPY v (id) FROM '{graph}.v' (DELIMITER ' ', FORMAT csv);")
 
