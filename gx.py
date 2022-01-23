@@ -10,9 +10,12 @@ cdlp_iterations = 2
 
 con.execute("CREATE TABLE v(id INTEGER)")
 con.execute("CREATE TABLE e(source INTEGER, target INTEGER, value DOUBLE)")
-# maybe do tic-toc style interations?
+# alternatively, do tic-toc style interations instead of having n tables?
+
 for i in range(0, cdlp_iterations+1):
     con.execute(f"CREATE TABLE cdlp{i}(id INTEGER, label INTEGER)")
+for i in range(0, pr_iterations+1):
+    con.execute(f"CREATE TABLE pr{i}(id INTEGER, value DOUBLE)")
 
 #graph = "/home/szarnyasg/graphs/example-undirected"
 #undirected = True
@@ -90,8 +93,11 @@ for i in range(0, cdlp_iterations):
             cdlp{i}.label
         ) most_frequent_labels
     WHERE seqnum = 1
+    ORDER BY id
     """)
     con.execute(f"DROP TABLE cdlp{i}")
+# TODO: CDLP is incorrect
+# TODO: fix indexing
 
 con.execute(f"SELECT * FROM cdlp{cdlp_iterations}")
 results = con.fetchall()
@@ -104,22 +110,71 @@ print("PR")
 print("====================")
 # should be relatively straightforward to implement using pr_iterations join/aggregate queries
 
-# SSSP
-print("====================")
-print("SSSP")
-print("====================")
-# http://aprogrammerwrites.eu/?p=1391
-# http://aprogrammerwrites.eu/?p=1415
-# https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
+results = con.execute("SELECT count(*) AS n FROM v")
+pr_n = con.fetchone()[0]
 
-# BFS
-print("====================")
-print("BFS")
-print("====================")
-# use recursive SQL or a sequence of joins?
+pr_teleport = (1-pr_d)/pr_n
+pr_dangling_redistribution_factor = pr_d/pr_n
 
-# WCC
-print("====================")
-print("WCC")
-print("====================")
-# check out "In-database connected component analysis", https://arxiv.org/pdf/1802.09478.pdf
+con.execute(f"""
+    CREATE TABLE dangling AS
+    SELECT id FROM v WHERE NOT EXISTS (SELECT 1 FROM e WHERE source = id)
+    """)
+
+con.execute(f"""
+    CREATE TABLE e_with_source_outdegrees AS
+    SELECT e1.source AS source, e1.target AS target, count(e2.target) AS outdegree
+    FROM e e1
+    JOIN e e2
+      ON e1.source = e2.source
+    GROUP BY e1.source, e1.target
+    """)
+
+# initialize PR_0
+con.execute(f"""
+    INSERT INTO pr0
+    SELECT id, 1.0/{pr_n} FROM v
+    """)
+
+# compute PR_1, ..., PR_#iterations
+for i in range(1, pr_iterations+1):
+    con.execute(f"""
+    INSERT INTO pr{i}
+    SELECT
+        v.id AS id,
+        {pr_teleport} +
+        {pr_d} * coalesce(sum(pr{i-1}.value / e_with_source_outdegrees.outdegree), 0) +
+        {pr_dangling_redistribution_factor} * (SELECT sum(pr{i-1}.value) FROM pr{i-1} JOIN dangling ON pr{i-1}.id = dangling.id)
+            AS value
+    FROM v
+    LEFT JOIN e_with_source_outdegrees
+           ON e_with_source_outdegrees.target = v.id
+    LEFT JOIN pr{i-1}
+           ON pr{i-1}.id = e_with_source_outdegrees.source
+    GROUP BY v.id
+    """)
+
+con.execute(f"SELECT * FROM pr{pr_iterations}")
+results = con.fetchall()
+for result in results:
+    print(result)
+
+# # SSSP
+# print("====================")
+# print("SSSP")
+# print("====================")
+# # http://aprogrammerwrites.eu/?p=1391
+# # http://aprogrammerwrites.eu/?p=1415
+# # https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
+
+# # BFS
+# print("====================")
+# print("BFS")
+# print("====================")
+# # use recursive SQL or a sequence of joins?
+
+# # WCC
+# print("====================")
+# print("WCC")
+# print("====================")
+# # check out "In-database connected component analysis", https://arxiv.org/pdf/1802.09478.pdf
