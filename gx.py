@@ -1,6 +1,7 @@
 import duckdb
 
-con = duckdb.connect(database=':memory:', read_only=False)
+#con = duckdb.connect(database=':memory:')
+con = duckdb.connect(database='test.duckdb')
 
 bfs_source = 2
 sssp_source = 2
@@ -8,30 +9,41 @@ pr_d = 0.85
 pr_iterations = 2
 cdlp_iterations = 2
 
-con.execute("CREATE TABLE v(id INTEGER)")
-con.execute("CREATE TABLE e(source INTEGER, target INTEGER, value DOUBLE)")
+con.execute("CREATE TABLE v (id INTEGER)")
+con.execute("CREATE TABLE e (source INTEGER, target INTEGER, value DOUBLE)")
+
 # alternatively, do tic-toc style interations instead of having n tables?
-
 for i in range(0, cdlp_iterations+1):
-    con.execute(f"CREATE TABLE cdlp{i}(id INTEGER, label INTEGER)")
+    con.execute(f"CREATE TABLE cdlp{i} (id INTEGER, label INTEGER)")
 for i in range(0, pr_iterations+1):
-    con.execute(f"CREATE TABLE pr{i}(id INTEGER, value DOUBLE)")
+    con.execute(f"CREATE TABLE pr{i} (id INTEGER, value DOUBLE)")
 
-#graph = "/home/szarnyasg/graphs/example-undirected"
-#undirected = True
-graph = "/home/szarnyasg/graphs/example-directed"
-undirected = False
+directed = False
+
+if directed:
+    graph = "/home/szarnyasg/graphs/example-directed"
+else:
+    graph = "/home/szarnyasg/graphs/example-undirected"
 
 con.execute(f"COPY v (id) FROM '{graph}.v' (DELIMITER ' ', FORMAT csv);")
 
 con.execute(f"COPY e (source, target, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
-if undirected:
+
+# create undirected variant:
+# - for directed graphs, it is an actual table
+# - for undirected ones, it is just a view on table e
+if directed:
+    con.execute(f"CREATE TABLE u (target INTEGER, source INTEGER, value INTEGER);")
+    con.execute(f"COPY u (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
+    con.execute(f"COPY u (source, target, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
+else:
     con.execute(f"COPY e (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
+    con.execute(f"CREATE VIEW u AS SELECT target, source, value FROM e;")
 
 # LCC
-print("====================")
+print("========================================")
 print("LCC")
-print("====================")
+print("========================================")
 con.execute("""CREATE VIEW neighbors AS (
     SELECT e.source AS vertex, e.target AS neighbor
     FROM e
@@ -46,17 +58,18 @@ SELECT
   CASE WHEN tri = 0 THEN 0.0 ELSE (CAST(tri AS float) / (deg*(deg-1))) END AS value
 FROM (
     SELECT
-    v.id AS id,
-    (SELECT count(*) FROM neighbors WHERE neighbors.vertex = v.id) AS deg,
-    (SELECT count(*)
-    FROM neighbors n1
-    JOIN neighbors n2
-      ON n1.vertex = n2.vertex
-    JOIN e e3
-      ON e3.source = n1.neighbor
-     AND e3.target = n2.neighbor
-    WHERE n1.vertex = v.id
-    ) AS tri
+        v.id AS id,
+        (SELECT count(*) FROM neighbors WHERE neighbors.vertex = v.id) AS deg,
+        (
+            SELECT count(*)
+            FROM neighbors n1
+            JOIN neighbors n2
+            ON n1.vertex = n2.vertex
+            JOIN e e3
+            ON e3.source = n1.neighbor
+            AND e3.target = n2.neighbor
+            WHERE n1.vertex = v.id
+        ) AS tri
     FROM v
     ORDER BY v.id ASC
 ) s
@@ -66,10 +79,9 @@ for result in results:
     print(result)
 
 # CDLP
-print()
-print("====================")
+print("========================================")
 print("CDLP")
-print("====================")
+print("========================================")
 con.execute("""
     INSERT INTO cdlp0
     SELECT id, id
@@ -77,38 +89,38 @@ con.execute("""
     """)
 
 # We select the minimum mode value (the smallest one from the most frequent labels).
-# We use the cdlp{i} table to compute cdlp{i+1}, then throw away the cdlp{i} table.
-for i in range(0, cdlp_iterations):
+# We use the cdlp{i-1} table to compute cdlp{i}, then throw away the cdlp{i-1} table.
+for i in range(1, cdlp_iterations+1):
     con.execute(f"""
-    INSERT INTO cdlp{i+1}
+    INSERT INTO cdlp{i}
     SELECT id, label FROM (
         SELECT
-            e.source AS id,
-            cdlp{i}.label AS label,
-            ROW_NUMBER() OVER (PARTITION BY e.source ORDER BY count(*) DESC, cdlp{i}.label ASC) AS seqnum
-        FROM e, cdlp{i}
-        WHERE cdlp{i}.id = e.target
+            u.source AS id,
+            cdlp{i-1}.label AS label,
+            ROW_NUMBER() OVER (PARTITION BY u.source ORDER BY count(*) DESC, cdlp{i-1}.label ASC) AS seqnum
+        FROM u
+        LEFT JOIN cdlp{i-1}
+          ON cdlp{i-1}.id = u.target
         GROUP BY
-            e.source,
-            cdlp{i}.label
+            u.source,
+            cdlp{i-1}.label
         ) most_frequent_labels
     WHERE seqnum = 1
     ORDER BY id
     """)
-    con.execute(f"DROP TABLE cdlp{i}")
-# TODO: CDLP is incorrect
-# TODO: fix indexing
+    con.execute(f"DROP TABLE cdlp{i-1}")
 
 con.execute(f"SELECT * FROM cdlp{cdlp_iterations}")
 results = con.fetchall()
 for result in results:
     print(result)
 
+# TODO: CDLP directed is incorrect
+
 # PR
-print("====================")
+print("========================================")
 print("PR")
-print("====================")
-# should be relatively straightforward to implement using pr_iterations join/aggregate queries
+print("========================================")
 
 results = con.execute("SELECT count(*) AS n FROM v")
 pr_n = con.fetchone()[0]
@@ -144,7 +156,7 @@ for i in range(1, pr_iterations+1):
         v.id AS id,
         {pr_teleport} +
         {pr_d} * coalesce(sum(pr{i-1}.value / e_with_source_outdegrees.outdegree), 0) +
-        {pr_dangling_redistribution_factor} * (SELECT sum(pr{i-1}.value) FROM pr{i-1} JOIN dangling ON pr{i-1}.id = dangling.id)
+        {pr_dangling_redistribution_factor} * (SELECT coalesce(sum(pr{i-1}.value), 0) FROM pr{i-1} JOIN dangling ON pr{i-1}.id = dangling.id)
             AS value
     FROM v
     LEFT JOIN e_with_source_outdegrees
@@ -153,6 +165,7 @@ for i in range(1, pr_iterations+1):
            ON pr{i-1}.id = e_with_source_outdegrees.source
     GROUP BY v.id
     """)
+    con.execute(f"DROP TABLE pr{i-1}")
 
 con.execute(f"SELECT * FROM pr{pr_iterations}")
 results = con.fetchall()
@@ -160,21 +173,21 @@ for result in results:
     print(result)
 
 # # SSSP
-# print("====================")
+# print("========================================")
 # print("SSSP")
-# print("====================")
+# print("========================================")
 # # http://aprogrammerwrites.eu/?p=1391
 # # http://aprogrammerwrites.eu/?p=1415
 # # https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
 
 # # BFS
-# print("====================")
+# print("========================================")
 # print("BFS")
-# print("====================")
+# print("========================================")
 # # use recursive SQL or a sequence of joins?
 
 # # WCC
-# print("====================")
+# print("========================================")
 # print("WCC")
-# print("====================")
+# print("========================================")
 # # check out "In-database connected component analysis", https://arxiv.org/pdf/1802.09478.pdf
