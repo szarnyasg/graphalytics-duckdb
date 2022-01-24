@@ -38,7 +38,7 @@ if directed:
     con.execute(f"COPY u (source, target, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
 else:
     con.execute(f"COPY e (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
-    con.execute(f"CREATE VIEW u AS SELECT target, source, value FROM e;")
+    con.execute(f"CREATE VIEW u AS SELECT source, target, value FROM e;")
 
 # LCC
 print("========================================")
