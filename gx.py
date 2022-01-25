@@ -1,44 +1,54 @@
 import duckdb
 
-#con = duckdb.connect(database=':memory:')
-con = duckdb.connect(database='test.duckdb')
+con = duckdb.connect(database=':memory:')
+#con = duckdb.connect(database='test.duckdb')
 
-bfs_source = 2
+directed = True
+
+bfs_source = 1
 sssp_source = 2
 pr_d = 0.85
 pr_iterations = 2
 cdlp_iterations = 2
 
-con.execute("CREATE TABLE v (id INTEGER)")
-con.execute("CREATE TABLE e (source INTEGER, target INTEGER, value DOUBLE)")
-
-# alternatively, do tic-toc style interations instead of having n tables?
-for i in range(0, cdlp_iterations+1):
-    con.execute(f"CREATE TABLE cdlp{i} (id INTEGER, label INTEGER)")
-for i in range(0, pr_iterations+1):
-    con.execute(f"CREATE TABLE pr{i} (id INTEGER, value DOUBLE)")
-
-directed = False
-
+## set data set
 if directed:
     graph = "/home/szarnyasg/graphs/example-directed"
 else:
     graph = "/home/szarnyasg/graphs/example-undirected"
 
-con.execute(f"COPY v (id) FROM '{graph}.v' (DELIMITER ' ', FORMAT csv);")
+## graph tables
+con.execute("CREATE TABLE v (id INTEGER)")
+con.execute("CREATE TABLE e (source INTEGER, target INTEGER, value DOUBLE)")
 
-con.execute(f"COPY e (source, target, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
+## loading
+con.execute(f"COPY v (id) FROM '{graph}.v' (DELIMITER ' ', FORMAT csv)")
+con.execute(f"COPY e (source, target, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv)")
+
+## auxiliary tables
+### CDLP
+for i in range(0, cdlp_iterations+1):
+    con.execute(f"CREATE TABLE cdlp{i} (id INTEGER, label INTEGER)")
+### PR
+for i in range(0, pr_iterations+1):
+    con.execute(f"CREATE TABLE pr{i} (id INTEGER, value DOUBLE)")
+### BFS
+con.execute("CREATE TABLE frontier(id INTEGER)")
+con.execute("CREATE TABLE next(id INTEGER)")
+con.execute("CREATE TABLE seen(id INTEGER, level INTEGER)")
+
+
 
 # create undirected variant:
 # - for directed graphs, it is an actual table
 # - for undirected ones, it is just a view on table e
 if directed:
-    con.execute(f"CREATE TABLE u (target INTEGER, source INTEGER, value INTEGER);")
-    con.execute(f"COPY u (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
-    con.execute(f"COPY u (source, target, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
+    con.execute(f"CREATE TABLE u (target INTEGER, source INTEGER, value INTEGER)")
+    con.execute(f"COPY u (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv)")
+    con.execute(f"COPY u (source, target, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv)")
 else:
-    con.execute(f"COPY e (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv);")
-    con.execute(f"CREATE VIEW u AS SELECT source, target, value FROM e;")
+    con.execute(f"COPY e (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv)")
+    con.execute(f"CREATE VIEW u AS SELECT source, target, value FROM e")
 
 # LCC
 print("========================================")
@@ -85,7 +95,7 @@ print("========================================")
 con.execute("""
     INSERT INTO cdlp0
     SELECT id, id
-    FROM v;
+    FROM v
     """)
 
 # We select the minimum mode value (the smallest one from the most frequent labels).
@@ -181,10 +191,46 @@ for result in results:
 # # https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
 
 # # BFS
-# print("========================================")
-# print("BFS")
-# print("========================================")
-# # use recursive SQL or a sequence of joins?
+print("========================================")
+print("BFS")
+print("========================================")
+
+# initial node
+level = 0
+con.execute(f"INSERT INTO next VALUES ({bfs_source})")
+con.execute(f"INSERT INTO seen (SELECT id, {level} FROM next)")
+con.execute(f"DELETE FROM frontier")
+con.execute(f"INSERT INTO frontier (SELECT * FROM next)")
+con.execute(f"DELETE FROM next")
+
+while True:
+    level = level + 1
+
+    con.execute(f"""
+        INSERT INTO next
+        (SELECT DISTINCT e.target
+        FROM frontier
+        JOIN e
+        ON e.source = frontier.id
+        WHERE NOT EXISTS (SELECT 1 FROM seen WHERE id = e.target))
+        """)
+
+    con.execute(f"SELECT count(id) AS count FROM next")
+    count = con.fetchone()[0]
+    if count == 0:
+        break
+
+    con.execute(f"INSERT INTO seen (SELECT id, {level} FROM next)")
+    con.execute(f"DELETE FROM frontier")
+    con.execute(f"INSERT INTO frontier (SELECT * FROM next)")
+    con.execute(f"DELETE FROM next")
+
+con.execute(f"SELECT * FROM seen")
+results = con.fetchall()
+for result in results:
+    print(result)
+
+
 
 # # WCC
 # print("========================================")
