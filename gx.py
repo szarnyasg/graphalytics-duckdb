@@ -1,4 +1,6 @@
 import duckdb
+import random
+
 
 con = duckdb.connect(database=':memory:')
 #con = duckdb.connect(database='test.duckdb')
@@ -37,8 +39,6 @@ con.execute("CREATE TABLE frontier(id INTEGER)")
 con.execute("CREATE TABLE next(id INTEGER)")
 con.execute("CREATE TABLE seen(id INTEGER, level INTEGER)")
 
-
-
 # create undirected variant:
 # - for directed graphs, it is an actual table
 # - for undirected ones, it is just a view on table e
@@ -50,7 +50,9 @@ else:
     con.execute(f"COPY e (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv)")
     con.execute(f"CREATE VIEW u AS SELECT source, target, value FROM e")
 
-# LCC
+###################################################################################################################
+###################################################################################################################
+###################################################################################################################
 print("========================================")
 print("LCC")
 print("========================================")
@@ -74,10 +76,10 @@ FROM (
             SELECT count(*)
             FROM neighbors n1
             JOIN neighbors n2
-            ON n1.vertex = n2.vertex
+              ON n1.vertex = n2.vertex
             JOIN e e3
-            ON e3.source = n1.neighbor
-            AND e3.target = n2.neighbor
+              ON e3.source = n1.neighbor
+             AND e3.target = n2.neighbor
             WHERE n1.vertex = v.id
         ) AS tri
     FROM v
@@ -88,7 +90,9 @@ results = con.fetchall()
 for result in results:
     print(result)
 
-# CDLP
+###################################################################################################################
+###################################################################################################################
+###################################################################################################################
 print("========================================")
 print("CDLP")
 print("========================================")
@@ -127,7 +131,9 @@ for result in results:
 
 # TODO: CDLP directed is incorrect
 
-# PR
+###################################################################################################################
+###################################################################################################################
+###################################################################################################################
 print("========================================")
 print("PR")
 print("========================================")
@@ -182,15 +188,21 @@ results = con.fetchall()
 for result in results:
     print(result)
 
-# # SSSP
+###################################################################################################################
+###################################################################################################################
+###################################################################################################################
 # print("========================================")
 # print("SSSP")
 # print("========================================")
-# # http://aprogrammerwrites.eu/?p=1391
-# # http://aprogrammerwrites.eu/?p=1415
-# # https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
+# http://aprogrammerwrites.eu/?p=1391
+# http://aprogrammerwrites.eu/?p=1415
+# https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
 
-# # BFS
+
+
+###################################################################################################################
+###################################################################################################################
+###################################################################################################################
 print("========================================")
 print("BFS")
 print("========================================")
@@ -230,10 +242,89 @@ results = con.fetchall()
 for result in results:
     print(result)
 
+###################################################################################################################
+###################################################################################################################
+###################################################################################################################
+print("========================================")
+print("WCC")
+print("========================================")
+# based on paper "In-database connected component analysis", https://arxiv.org/pdf/1802.09478.pdf
 
+con.execute("""
+    CREATE TABLE ccgraph AS
+        SELECT source AS v1, target AS v2
+        FROM u
+    """)
 
-# # WCC
-# print("========================================")
-# print("WCC")
-# print("========================================")
-# # check out "In-database connected component analysis", https://arxiv.org/pdf/1802.09478.pdf
+roundno = 0
+stackA = []
+stackB = []
+
+while True:
+    roundno += 1
+    ccreps = f"ccreps{roundno}"
+    rA = 0
+
+    while rA == 0:
+        rA = random.randint(-2**63,2**63-1)
+    rB = random.randint(-2**63,2**63-1)
+    stackA.append(rA)
+    stackB.append(rB)
+
+    con.execute(f"""
+        CREATE TABLE {ccreps} AS
+            SELECT
+                v1 v,
+                --least(axplusb({rA}, v1, {rB}),
+                --min(axplusb({rA}, v2, {rB}))) rep
+                42,
+                42 rep
+            FROM ccgraph
+            GROUP BY v1
+        """)
+    con.execute(f"""
+        CREATE TABLE ccgraph2 AS
+            SELECT r1.rep AS v1, v2
+            FROM ccgraph, {ccreps} AS r1
+            WHERE ccgraph.v1 = r1.v
+        """)
+    con.execute("DROP TABLE ccgraph")
+    con.execute(f"""
+        CREATE TABLE ccgraph3 AS
+            SELECT distinct v1, r2.rep AS v2
+            FROM ccgraph2, {ccreps} AS r2
+            WHERE ccgraph2.v2 = r2.v
+              AND v1 != r2.rep
+        """)
+    con.execute("SELECT count(*) AS count FROM ccgraph3")
+    graphsize = con.fetchone()[0]
+    con.execute("DROP TABLE ccgraph2")
+    con.execute("ALTER TABLE ccgraph3 RENAME TO ccgraph ")
+    if graphsize == 0:
+        break
+
+accA = 1
+accB = 0
+
+while True:
+    roundno -= 1
+    (accA, accB) = (0, 0) # (r.axplusb(accA, stackA.pop(), 0), r.axplusb(accA, stackB.pop(), accB))
+    if roundno == 0:
+        break
+    ccrepsr = f"ccreps {roundno}"
+    ccrepsr1 = f"ccreps {roundno+1}"
+    con.execute(f"""
+        CREATE TABLE tmp AS
+            SELECT
+                r1.v AS v,
+                coalesce(r2.rep, axplusb({accA}, r1.rep, {accB})) AS rep
+            FROM {ccrepsr} AS r1
+            LEFT OUTER JOIN {ccrepsr1} AS r2
+                         ON r1.rep = r2.v
+        """)
+    con.execute(f"DROP TABLE {ccrepsr}")
+    con.execute(f"DROP TABLE {ccrepsr1}")
+    con.execute("ALTER TABLE tmp RENAME TO {ccrepsr}")
+
+con.execute("ALTER TABLE ccreps1 RENAME TO ccresult")
+con.execute("DROP TABLE ccgraph")
