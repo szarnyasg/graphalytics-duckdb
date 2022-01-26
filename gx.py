@@ -310,10 +310,10 @@ while True:
               AND v1 != r2.rep
         """)
 
-    con.execute("SELECT * FROM ccgraph3")
-    results = con.fetchall()
-    for result in results:
-        print(result)
+    # con.execute("SELECT * FROM ccgraph3")
+    # results = con.fetchall()
+    # for result in results:
+    #     print(result)
 
     con.execute("SELECT count(*) AS count FROM ccgraph3")
     graphsize = con.fetchone()[0]
@@ -329,7 +329,12 @@ accB = 0
 
 while True:
     roundno -= 1
-    (accA, accB) = (0, 0) # (r.axplusb(accA, stackA.pop(), 0), r.axplusb(accA, stackB.pop(), accB))
+    con.execute(f"SELECT axplusb({accA}, {stackA.pop()}, 0) AS accA")
+    accA = con.fetchone()[0]
+
+    con.execute(f"SELECT axplusb({accA}, {stackB.pop()}, {accB}) AS accB")
+    accB = con.fetchone()[0]
+
     if roundno == 0:
         break
     ccrepsr = f"ccreps{roundno}"
