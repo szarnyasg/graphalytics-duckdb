@@ -2,20 +2,15 @@ import duckdb
 import random
 import os
 
-#con = duckdb.connect(database=":memory:")
+memory = True
 
-dbfile = "test.duckdb"
-if os.path.exists(dbfile):
-    os.remove(dbfile)
-
-con = duckdb.connect(database=dbfile)
-
-# con.execute("select axplusb(123, 456, 789)")
-# results = con.fetchall()
-# for result in results:
-#     print(result)
-
-# exit(0)
+if memory:
+    con = duckdb.connect(database=":memory:")
+else:
+    dbfile = "test.duckdb"
+    if os.path.exists(dbfile):
+        os.remove(dbfile)
+    con = duckdb.connect(database=dbfile)
 
 directed = False
 
@@ -295,32 +290,28 @@ while True:
             FROM ccgraph
             GROUP BY v1
         """)
+
     con.execute(f"""
         CREATE TABLE ccgraph2 AS
             SELECT r1.rep AS v1, v2
             FROM ccgraph, {ccreps} AS r1
             WHERE ccgraph.v1 = r1.v
         """)
+
     con.execute("DROP TABLE ccgraph")
     con.execute(f"""
         CREATE TABLE ccgraph3 AS
             SELECT DISTINCT v1, r2.rep AS v2
             FROM ccgraph2, {ccreps} AS r2
             WHERE ccgraph2.v2 = r2.v
-              AND v1 != r2.rep
+            AND v1 != r2.rep
         """)
-
-    # con.execute("SELECT * FROM ccgraph3")
-    # results = con.fetchall()
-    # for result in results:
-    #     print(result)
 
     con.execute("SELECT count(*) AS count FROM ccgraph3")
     graphsize = con.fetchone()[0]
     con.execute("DROP TABLE ccgraph2")
     con.execute("ALTER TABLE ccgraph3 RENAME TO ccgraph")
 
-    print(f"graphsize: {graphsize}")
     if graphsize == 0:
         break
 
@@ -346,11 +337,16 @@ while True:
                 coalesce(r2.rep, axplusb({accA}, r1.rep, {accB})) AS rep
             FROM {ccrepsr} AS r1
             LEFT OUTER JOIN {ccrepsr1} AS r2
-                         ON r1.rep = r2.v
+                        ON r1.rep = r2.v
         """)
     con.execute(f"DROP TABLE {ccrepsr}")
     con.execute(f"DROP TABLE {ccrepsr1}")
-    con.execute("ALTER TABLE tmp RENAME TO {ccrepsr}")
+    con.execute(f"ALTER TABLE tmp RENAME TO {ccrepsr}")
 
 con.execute("ALTER TABLE ccreps1 RENAME TO ccresult")
 con.execute("DROP TABLE ccgraph")
+
+con.execute(f"SELECT * FROM ccresult")
+results = con.fetchall()
+for result in results:
+    print(result)
