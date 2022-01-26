@@ -1,11 +1,23 @@
 import duckdb
 import random
+import os
 
+#con = duckdb.connect(database=":memory:")
 
-con = duckdb.connect(database=':memory:')
-#con = duckdb.connect(database='test.duckdb')
+dbfile = "test.duckdb"
+if os.path.exists(dbfile):
+    os.remove(dbfile)
 
-directed = True
+con = duckdb.connect(database=dbfile)
+
+# con.execute("select axplusb(123, 456, 789)")
+# results = con.fetchall()
+# for result in results:
+#     print(result)
+
+# exit(0)
+
+directed = False
 
 bfs_source = 1
 sssp_source = 2
@@ -263,11 +275,12 @@ stackB = []
 while True:
     roundno += 1
     ccreps = f"ccreps{roundno}"
-    rA = 0
 
+    rA = 0
     while rA == 0:
-        rA = random.randint(-2**63,2**63-1)
-    rB = random.randint(-2**63,2**63-1)
+        rA = random.randint(-2**63, 2**63-1)
+
+    rB = random.randint(-2**63, 2**63-1)
     stackA.append(rA)
     stackB.append(rB)
 
@@ -275,10 +288,10 @@ while True:
         CREATE TABLE {ccreps} AS
             SELECT
                 v1 v,
-                --least(axplusb({rA}, v1, {rB}),
-                --min(axplusb({rA}, v2, {rB}))) rep
-                42,
-                42 rep
+                least(
+                    axplusb({rA}, v1, {rB}),
+                    min(axplusb({rA}, v2, {rB}))
+                ) rep
             FROM ccgraph
             GROUP BY v1
         """)
@@ -291,15 +304,23 @@ while True:
     con.execute("DROP TABLE ccgraph")
     con.execute(f"""
         CREATE TABLE ccgraph3 AS
-            SELECT distinct v1, r2.rep AS v2
+            SELECT DISTINCT v1, r2.rep AS v2
             FROM ccgraph2, {ccreps} AS r2
             WHERE ccgraph2.v2 = r2.v
               AND v1 != r2.rep
         """)
+
+    con.execute("SELECT * FROM ccgraph3")
+    results = con.fetchall()
+    for result in results:
+        print(result)
+
     con.execute("SELECT count(*) AS count FROM ccgraph3")
     graphsize = con.fetchone()[0]
     con.execute("DROP TABLE ccgraph2")
-    con.execute("ALTER TABLE ccgraph3 RENAME TO ccgraph ")
+    con.execute("ALTER TABLE ccgraph3 RENAME TO ccgraph")
+
+    print(f"graphsize: {graphsize}")
     if graphsize == 0:
         break
 
@@ -311,8 +332,8 @@ while True:
     (accA, accB) = (0, 0) # (r.axplusb(accA, stackA.pop(), 0), r.axplusb(accA, stackB.pop(), accB))
     if roundno == 0:
         break
-    ccrepsr = f"ccreps {roundno}"
-    ccrepsr1 = f"ccreps {roundno+1}"
+    ccrepsr = f"ccreps{roundno}"
+    ccrepsr1 = f"ccreps{roundno+1}"
     con.execute(f"""
         CREATE TABLE tmp AS
             SELECT
