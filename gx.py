@@ -14,8 +14,6 @@ else:
 
 directed = False
 
-bfs_source = 1
-sssp_source = 2
 pr_d = 0.85
 pr_iterations = 2
 cdlp_iterations = 2
@@ -23,8 +21,14 @@ cdlp_iterations = 2
 ## set data set
 if directed:
     graph = "/home/szarnyasg/graphs/example-directed"
+    bfs_source = 1
+    sssp_source = 1
 else:
     graph = "/home/szarnyasg/graphs/example-undirected"
+    bfs_source = 2
+    sssp_source = 2
+
+## TODO: handle unweighted edges
 
 ## graph tables
 con.execute("CREATE TABLE v (id INTEGER)")
@@ -198,18 +202,6 @@ for result in results:
 ###################################################################################################################
 ###################################################################################################################
 ###################################################################################################################
-# print("========================================")
-# print("SSSP")
-# print("========================================")
-# http://aprogrammerwrites.eu/?p=1391
-# http://aprogrammerwrites.eu/?p=1415
-# https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
-
-
-
-###################################################################################################################
-###################################################################################################################
-###################################################################################################################
 print("========================================")
 print("BFS")
 print("========================================")
@@ -347,6 +339,61 @@ con.execute("ALTER TABLE ccreps1 RENAME TO ccresult")
 con.execute("DROP TABLE ccgraph")
 
 con.execute(f"SELECT * FROM ccresult")
+results = con.fetchall()
+for result in results:
+    print(result)
+
+###################################################################################################################
+###################################################################################################################
+###################################################################################################################
+# print("========================================")
+# print("SSSP")
+# print("========================================")
+# http://aprogrammerwrites.eu/?p=1391
+# http://aprogrammerwrites.eu/?p=1415
+# https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
+
+con.execute(f"""
+    CREATE TABLE d AS
+        SELECT {sssp_source} AS id, CAST(0 AS float) AS dist
+    """)
+con.execute(f"SELECT * FROM d")
+
+# add 0-length loop edges
+con.execute(f"INSERT INTO e SELECT id, id, 0.0 FROM v")
+
+while True:
+    con.execute(f"""
+        CREATE TABLE d2 AS
+            SELECT e.target AS id, min(d.dist + e.value) AS dist
+            FROM d
+            JOIN e
+            ON d.id = e.source
+            GROUP BY e.target
+        """)
+
+    con.execute("""
+        SELECT count(id) AS numchanged FROM (
+            (
+                SELECT id, dist FROM d
+                EXCEPT
+                SELECT id, dist FROM d2
+            ) UNION ALL (
+                SELECT id, dist FROM d2
+                EXCEPT
+                SELECT id, dist FROM d
+            )
+        )
+        """)
+    numchanged = con.fetchone()[0]
+
+    con.execute("DROP TABLE d");
+    con.execute("ALTER TABLE d2 RENAME TO d")
+
+    if numchanged == 0:
+        break
+
+con.execute(f"SELECT * FROM d")
 results = con.fetchall()
 for result in results:
     print(result)
