@@ -20,11 +20,11 @@ cdlp_iterations = 2
 
 ## set data set
 if directed:
-    graph = "/home/szarnyasg/graphs/example-directed"
+    graph = "graphs/example-directed"
     bfs_source = 1
     sssp_source = 1
 else:
-    graph = "/home/szarnyasg/graphs/example-undirected"
+    graph = "graphs/example-undirected"
     bfs_source = 2
     sssp_source = 2
 
