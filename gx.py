@@ -66,6 +66,7 @@ def bfs(con, bfs_source):
     results = con.fetchall()
     for result in results:
         print(result)
+    con.execute(f"COPY (SELECT * FROM seen ORDER BY id) TO 'scratch/BFS.csv' (DELIMITER ' ', HEADER false);")
 
 
 def cdlp(con, cdlp_iterations):
@@ -107,6 +108,7 @@ def cdlp(con, cdlp_iterations):
     results = con.fetchall()
     for result in results:
         print(result)
+    con.execute(f"COPY (SELECT * FROM cdlp{cdlp_iterations} ORDER BY id) TO 'scratch/CDLP.csv' (DELIMITER ' ', HEADER false);")
 
     # TODO: CDLP directed is incorrect
 
@@ -124,30 +126,30 @@ def lcc(con):
         )
     """)
     con.execute("""
-    SELECT
-    id,
-    CASE WHEN tri = 0 THEN 0.0 ELSE (CAST(tri AS float) / (deg*(deg-1))) END AS value
-    FROM (
-        SELECT
-            v.id AS id,
-            (SELECT count(*) FROM neighbors WHERE neighbors.vertex = v.id) AS deg,
-            (
-                SELECT count(*)
-                FROM neighbors n1
-                JOIN neighbors n2
-                ON n1.vertex = n2.vertex
-                JOIN e e3
-                ON e3.source = n1.neighbor
-                AND e3.target = n2.neighbor
-                WHERE n1.vertex = v.id
-            ) AS tri
-        FROM v
-        ORDER BY v.id ASC
-    ) s
+    CREATE TABLE lcc AS
+        SELECT id, CASE WHEN tri = 0 THEN 0.0 ELSE (CAST(tri AS float) / (deg*(deg-1))) END AS value
+        FROM (
+            SELECT
+                v.id AS id,
+                (SELECT count(*) FROM neighbors WHERE neighbors.vertex = v.id) AS deg,
+                (
+                    SELECT count(*)
+                    FROM neighbors n1
+                    JOIN neighbors n2
+                    ON n1.vertex = n2.vertex
+                    JOIN e e3
+                    ON e3.source = n1.neighbor
+                    AND e3.target = n2.neighbor
+                    WHERE n1.vertex = v.id
+                ) AS tri
+            FROM v
+            ORDER BY v.id ASC
+        ) s
     """)
     results = con.fetchall()
     for result in results:
         print(result)
+    con.execute(f"COPY (SELECT * FROM lcc ORDER BY id) TO 'scratch/LCC.csv' (DELIMITER ' ', HEADER false);")
 
 
 def pr(con, pr_iterations):
@@ -206,6 +208,7 @@ def pr(con, pr_iterations):
     results = con.fetchall()
     for result in results:
         print(result)
+    con.execute(f"COPY (SELECT * FROM pr{pr_iterations} ORDER BY id) TO 'scratch/PR.csv' (DELIMITER ' ', HEADER false);")
 
 
 def sssp(con, sssp_source):
@@ -262,6 +265,7 @@ def sssp(con, sssp_source):
     results = con.fetchall()
     for result in results:
         print(result)
+    con.execute(f"COPY (SELECT * FROM d ORDER BY id) TO 'scratch/SSSP.csv' (DELIMITER ' ', HEADER false);")
 
 
 def wcc(con):
@@ -350,19 +354,20 @@ def wcc(con):
                     coalesce(r2.rep, axplusb({accA}, r1.rep, {accB})) AS rep
                 FROM {ccrepsr} AS r1
                 LEFT OUTER JOIN {ccrepsr1} AS r2
-                            ON r1.rep = r2.v
+                             ON r1.rep = r2.v
             """)
         con.execute(f"DROP TABLE {ccrepsr}")
         con.execute(f"DROP TABLE {ccrepsr1}")
         con.execute(f"ALTER TABLE tmp RENAME TO {ccrepsr}")
 
-    con.execute("ALTER TABLE ccreps1 RENAME TO ccresult")
-    con.execute("DROP TABLE ccgraph")
+    con.execute(f"ALTER TABLE ccreps1 RENAME TO ccresult")
+    con.execute(f"DROP TABLE ccgraph")
 
     con.execute(f"SELECT * FROM ccresult")
     results = con.fetchall()
     for result in results:
         print(result)
+    con.execute(f"COPY (SELECT * FROM ccresult ORDER BY v) TO 'scratch/WCC.csv' (DELIMITER ' ', HEADER false);")
 
 
 
