@@ -2,40 +2,48 @@ import duckdb
 import argparse
 import random
 import os
+from jproperties import Properties
 
 
-def init_tables(con, graph, directed):
+def init_tables(con, data_directory, graph, directed, weighted):
     ## graph tables
-    con.execute("CREATE TABLE v (id INTEGER)")
-    con.execute("CREATE TABLE e (source INTEGER, target INTEGER, value DOUBLE)")
-
+    con.execute(f"CREATE TABLE v (id INTEGER)")
+    if weighted:
+        weight_attribute_without_type = ", weight"
+        weight_attribute_with_type = ", weight DOUBLE"
+    else:
+        weight_attribute_without_type = ""
+        weight_attribute_with_type = ""
+ 
+    con.execute(f"CREATE TABLE e (source INTEGER, target INTEGER{weight_attribute_with_type})")
+ 
     ## loading
-    con.execute(f"COPY v (id) FROM '{graph}.v' (DELIMITER ' ', FORMAT csv)")
-    con.execute(f"COPY e (source, target, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv)")
+    con.execute(f"COPY v (id) FROM '{data_directory}/{graph}.v' (DELIMITER ' ', FORMAT csv)")
+    con.execute(f"COPY e (source, target{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
 
     # create undirected variant:
     # - for directed graphs, it is an actual table
     # - for undirected ones, it is just a view on table e
     if directed:
-        con.execute(f"CREATE TABLE u (target INTEGER, source INTEGER, value INTEGER)")
-        con.execute(f"COPY u (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv)")
-        con.execute(f"COPY u (source, target, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv)")
+        con.execute(f"CREATE TABLE u (target INTEGER, source INTEGER{weight_attribute_with_type})")
+        con.execute(f"COPY u (target, source{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
+        con.execute(f"COPY u (source, target{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
     else:
-        con.execute(f"COPY e (target, source, value) FROM '{graph}.e' (DELIMITER ' ', FORMAT csv)")
-        con.execute(f"CREATE VIEW u AS SELECT source, target, value FROM e")
+        con.execute(f"COPY e (target, source{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
+        con.execute(f"CREATE VIEW u AS SELECT source, target{weight_attribute_without_type} FROM e")
 
 
-def bfs(con, bfs_source):
+def bfs(con, bfs_source_vertex):
     print("========================================")
     print("BFS")
     print("========================================")
-    con.execute("CREATE TABLE frontier(id INTEGER)")
-    con.execute("CREATE TABLE next(id INTEGER)")
-    con.execute("CREATE TABLE seen(id INTEGER, level INTEGER)")
+    con.execute(f"CREATE TABLE frontier(id INTEGER)")
+    con.execute(f"CREATE TABLE next(id INTEGER)")
+    con.execute(f"CREATE TABLE seen(id INTEGER, level INTEGER)")
 
     # initial node
     level = 0
-    con.execute(f"INSERT INTO next VALUES ({bfs_source})")
+    con.execute(f"INSERT INTO next VALUES ({bfs_source_vertex})")
     con.execute(f"INSERT INTO seen (SELECT id, {level} FROM next)")
     con.execute(f"DELETE FROM frontier")
     con.execute(f"INSERT INTO frontier (SELECT * FROM next)")
@@ -70,11 +78,11 @@ def bfs(con, bfs_source):
     con.execute(f"COPY (SELECT * FROM seen ORDER BY id) TO 'scratch/BFS.csv' (DELIMITER ' ', HEADER false);")
 
 
-def cdlp(con, cdlp_iterations):
+def cdlp(con, cdlp_max_iterations):
     print("========================================")
     print("CDLP")
     print("========================================")
-    for i in range(0, cdlp_iterations+1):
+    for i in range(0, cdlp_max_iterations+1):
         con.execute(f"CREATE TABLE cdlp{i} (id INTEGER, label INTEGER)")
 
     con.execute("""
@@ -85,7 +93,7 @@ def cdlp(con, cdlp_iterations):
 
     # We select the minimum mode value (the smallest one from the most frequent labels).
     # We use the cdlp{i-1} table to compute cdlp{i}, then throw away the cdlp{i-1} table.
-    for i in range(1, cdlp_iterations+1):
+    for i in range(1, cdlp_max_iterations+1):
         con.execute(f"""
         INSERT INTO cdlp{i}
         SELECT id, label FROM (
@@ -105,11 +113,11 @@ def cdlp(con, cdlp_iterations):
         """)
         con.execute(f"DROP TABLE cdlp{i-1}")
 
-    con.execute(f"SELECT * FROM cdlp{cdlp_iterations}")
+    con.execute(f"SELECT * FROM cdlp{cdlp_max_iterations}")
     results = con.fetchall()
     for result in results:
         print(result)
-    con.execute(f"COPY (SELECT * FROM cdlp{cdlp_iterations} ORDER BY id) TO 'scratch/CDLP.csv' (DELIMITER ' ', HEADER false);")
+    con.execute(f"COPY (SELECT * FROM cdlp{cdlp_max_iterations} ORDER BY id) TO 'scratch/CDLP.csv' (DELIMITER ' ', HEADER false);")
 
     # TODO: CDLP directed is incorrect
 
@@ -153,18 +161,18 @@ def lcc(con):
     con.execute(f"COPY (SELECT * FROM lcc ORDER BY id) TO 'scratch/LCC.csv' (DELIMITER ' ', HEADER false);")
 
 
-def pr(con, pr_iterations):
-    for i in range(0, pr_iterations+1):
+def pr(con, pr_damping_factor, pr_num_iterations):
+    for i in range(0, pr_num_iterations+1):
         con.execute(f"CREATE TABLE pr{i} (id INTEGER, value DOUBLE)")
     print("========================================")
     print("PR")
     print("========================================")
 
     results = con.execute("SELECT count(*) AS n FROM v")
-    pr_n = con.fetchone()[0]
+    n = con.fetchone()[0]
 
-    pr_teleport = (1-pr_d)/pr_n
-    pr_dangling_redistribution_factor = pr_d/pr_n
+    pr_teleport = (1-pr_damping_factor)/n
+    pr_dangling_redistribution_factor = pr_damping_factor/n
 
     con.execute(f"""
         CREATE TABLE dangling AS
@@ -183,17 +191,17 @@ def pr(con, pr_iterations):
     # initialize PR_0
     con.execute(f"""
         INSERT INTO pr0
-        SELECT id, 1.0/{pr_n} FROM v
+        SELECT id, 1.0/{n} FROM v
         """)
 
     # compute PR_1, ..., PR_#iterations
-    for i in range(1, pr_iterations+1):
+    for i in range(1, pr_num_iterations+1):
         con.execute(f"""
         INSERT INTO pr{i}
         SELECT
             v.id AS id,
             {pr_teleport} +
-            {pr_d} * coalesce(sum(pr{i-1}.value / e_with_source_outdegrees.outdegree), 0) +
+            {pr_damping_factor} * coalesce(sum(pr{i-1}.value / e_with_source_outdegrees.outdegree), 0) +
             {pr_dangling_redistribution_factor} * (SELECT coalesce(sum(pr{i-1}.value), 0) FROM pr{i-1} JOIN dangling ON pr{i-1}.id = dangling.id)
                 AS value
         FROM v
@@ -205,14 +213,14 @@ def pr(con, pr_iterations):
         """)
         con.execute(f"DROP TABLE pr{i-1}")
 
-    con.execute(f"SELECT * FROM pr{pr_iterations}")
+    con.execute(f"SELECT * FROM pr{pr_num_iterations}")
     results = con.fetchall()
     for result in results:
         print(result)
-    con.execute(f"COPY (SELECT * FROM pr{pr_iterations} ORDER BY id) TO 'scratch/PR.csv' (DELIMITER ' ', HEADER false);")
+    con.execute(f"COPY (SELECT * FROM pr{pr_num_iterations} ORDER BY id) TO 'scratch/PR.csv' (DELIMITER ' ', HEADER false);")
 
 
-def sssp(con, sssp_source):
+def sssp(con, sssp_source_vertex):
     print("========================================")
     print("SSSP")
     print("========================================")
@@ -222,7 +230,7 @@ def sssp(con, sssp_source):
 
     con.execute(f"""
         CREATE TABLE d AS
-            SELECT {sssp_source} AS id, CAST(0 AS float) AS dist
+            SELECT {sssp_source_vertex} AS id, CAST(0 AS float) AS dist
         """)
     con.execute(f"SELECT * FROM d")
 
@@ -232,7 +240,7 @@ def sssp(con, sssp_source):
     while True:
         con.execute(f"""
             CREATE TABLE d2 AS
-                SELECT e.target AS id, min(d.dist + e.value) AS dist
+                SELECT e.target AS id, min(d.dist + e.weight) AS dist
                 FROM d
                 JOIN e
                 ON d.id = e.source
@@ -371,44 +379,44 @@ def wcc(con):
     con.execute(f"COPY (SELECT * FROM ccresult ORDER BY v) TO 'scratch/WCC.csv' (DELIMITER ' ', HEADER false);")
 
 
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--directed', type=bool, help='Denotes whether the graph is directed', required=True)
-parser.add_argument('--weighted', type=bool, help='Denotes whether the graph is weighted', required=True)
+parser.add_argument('--graph', type=str, help='The LDBC Graphalytics graph to be used', required=True)
+parser.add_argument('--data_directory', type=str, help='The directory where the graphs are stored', required=True)
+parser.add_argument('--use_disk', action='store_true', help='The LDBC Graphalytics graph to be used', required=False)
 args = parser.parse_args()
 
 
-memory = True
-if memory:
-    con = duckdb.connect(database=":memory:")
-else:
+if args.use_disk:
     dbfile = "test.duckdb"
     if os.path.exists(dbfile):
         os.remove(dbfile)
     con = duckdb.connect(database=dbfile)
-
-directed = False
-
-pr_d = 0.85
-pr_iterations = 2
-cdlp_iterations = 2
-
-## set data set
-if directed:
-    graph = "graphs/example-directed"
-    bfs_source = 1
-    sssp_source = 1
 else:
-    graph = "graphs/example-undirected"
-    bfs_source = 2
-    sssp_source = 2
+    con = duckdb.connect(database=":memory:")
 
-## TODO: handle unweighted edges
+graph = args.graph
+data_directory = args.data_directory
 
-init_tables(con, graph, directed)
+configs = Properties()
 
-bfs(con, bfs_source)
-pr(con, pr_iterations)
-sssp(con, sssp_source)
+with open(f"graphalytics-graphs-properties/{graph}.properties", "rb") as config_file:
+    configs.load(config_file)
+    directed = bool(configs.get(f"graph.{graph}.directed").data)
+    bfs_source_vertex = int(configs.get(f"graph.{graph}.bfs.source-vertex").data)
+    cdlp_max_iterations = int(configs.get(f"graph.{graph}.cdlp.max-iterations").data)
+    pr_damping_factor = float(configs.get(f"graph.{graph}.pr.damping-factor").data)
+    pr_num_iterations = int(configs.get(f"graph.{graph}.pr.num-iterations").data)
+    sssp_source_vertex = int(configs.get(f"graph.{graph}.sssp.source-vertex").data)
+    list_of_supported_algorithms = configs.get(f"graph.{graph}.algorithms").data
+    weighted = "sssp" in list_of_supported_algorithms
+
+
+init_tables(con, data_directory, graph, directed, weighted)
+
+bfs(con, bfs_source_vertex)
+pr(con, pr_damping_factor, pr_num_iterations)
+sssp(con, sssp_source_vertex)
 wcc(con)
 lcc(con)
-cdlp(con, cdlp_iterations)
+cdlp(con, cdlp_max_iterations)
