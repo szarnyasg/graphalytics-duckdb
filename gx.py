@@ -6,6 +6,7 @@ from jproperties import Properties
 
 
 def init_tables(con, data_directory, graph, directed, weighted):
+    print("Loading")
     ## graph tables
     con.execute(f"CREATE TABLE v (id INTEGER)")
     if weighted:
@@ -34,9 +35,7 @@ def init_tables(con, data_directory, graph, directed, weighted):
 
 
 def bfs(con, bfs_source_vertex):
-    print("========================================")
     print("BFS")
-    print("========================================")
     con.execute(f"CREATE TABLE frontier(id INTEGER)")
     con.execute(f"CREATE TABLE next(id INTEGER)")
     con.execute(f"CREATE TABLE seen(id INTEGER, level INTEGER)")
@@ -71,17 +70,11 @@ def bfs(con, bfs_source_vertex):
         con.execute(f"INSERT INTO frontier (SELECT * FROM next)")
         con.execute(f"DELETE FROM next")
 
-    con.execute(f"SELECT * FROM seen")
-    results = con.fetchall()
-    for result in results:
-        print(result)
     con.execute(f"COPY (SELECT * FROM seen ORDER BY id) TO 'scratch/BFS.csv' (DELIMITER ' ', HEADER false);")
 
 
 def cdlp(con, cdlp_max_iterations):
-    print("========================================")
     print("CDLP")
-    print("========================================")
     for i in range(0, cdlp_max_iterations+1):
         con.execute(f"CREATE TABLE cdlp{i} (id INTEGER, label INTEGER)")
 
@@ -113,19 +106,11 @@ def cdlp(con, cdlp_max_iterations):
         """)
         con.execute(f"DROP TABLE cdlp{i-1}")
 
-    con.execute(f"SELECT * FROM cdlp{cdlp_max_iterations}")
-    results = con.fetchall()
-    for result in results:
-        print(result)
     con.execute(f"COPY (SELECT * FROM cdlp{cdlp_max_iterations} ORDER BY id) TO 'scratch/CDLP.csv' (DELIMITER ' ', HEADER false);")
-
-    # TODO: CDLP directed is incorrect
 
 
 def lcc(con):
-    print("========================================")
     print("LCC")
-    print("========================================")
     con.execute("""CREATE VIEW neighbors AS (
         SELECT e.source AS vertex, e.target AS neighbor
         FROM e
@@ -155,18 +140,13 @@ def lcc(con):
             ORDER BY v.id ASC
         ) s
     """)
-    results = con.fetchall()
-    for result in results:
-        print(result)
     con.execute(f"COPY (SELECT * FROM lcc ORDER BY id) TO 'scratch/LCC.csv' (DELIMITER ' ', HEADER false);")
 
 
 def pr(con, pr_damping_factor, pr_num_iterations):
     for i in range(0, pr_num_iterations+1):
         con.execute(f"CREATE TABLE pr{i} (id INTEGER, value DOUBLE)")
-    print("========================================")
     print("PR")
-    print("========================================")
 
     results = con.execute("SELECT count(*) AS n FROM v")
     n = con.fetchone()[0]
@@ -213,17 +193,11 @@ def pr(con, pr_damping_factor, pr_num_iterations):
         """)
         con.execute(f"DROP TABLE pr{i-1}")
 
-    con.execute(f"SELECT * FROM pr{pr_num_iterations}")
-    results = con.fetchall()
-    for result in results:
-        print(result)
     con.execute(f"COPY (SELECT * FROM pr{pr_num_iterations} ORDER BY id) TO 'scratch/PR.csv' (DELIMITER ' ', HEADER false);")
 
 
 def sssp(con, sssp_source_vertex):
-    print("========================================")
     print("SSSP")
-    print("========================================")
     # http://aprogrammerwrites.eu/?p=1391
     # http://aprogrammerwrites.eu/?p=1415
     # https://learnsql.com/blog/get-to-know-the-power-of-sql-recursive-queries/
@@ -270,17 +244,11 @@ def sssp(con, sssp_source_vertex):
         if numchanged == 0:
             break
 
-    con.execute(f"SELECT * FROM d")
-    results = con.fetchall()
-    for result in results:
-        print(result)
     con.execute(f"COPY (SELECT * FROM d ORDER BY id) TO 'scratch/SSSP.csv' (DELIMITER ' ', HEADER false);")
 
 
 def wcc(con):
-    print("========================================")
     print("WCC")
-    print("========================================")
     # based on paper "In-database connected component analysis", https://arxiv.org/pdf/1802.09478.pdf
 
     con.execute("""
@@ -372,10 +340,6 @@ def wcc(con):
     con.execute(f"ALTER TABLE ccreps1 RENAME TO ccresult")
     con.execute(f"DROP TABLE ccgraph")
 
-    con.execute(f"SELECT * FROM ccresult")
-    results = con.fetchall()
-    for result in results:
-        print(result)
     con.execute(f"COPY (SELECT * FROM ccresult ORDER BY v) TO 'scratch/WCC.csv' (DELIMITER ' ', HEADER false);")
 
 
@@ -407,16 +371,20 @@ with open(f"graphalytics-graphs-properties/{graph}.properties", "rb") as config_
     cdlp_max_iterations = int(configs.get(f"graph.{graph}.cdlp.max-iterations").data)
     pr_damping_factor = float(configs.get(f"graph.{graph}.pr.damping-factor").data)
     pr_num_iterations = int(configs.get(f"graph.{graph}.pr.num-iterations").data)
-    sssp_source_vertex = int(configs.get(f"graph.{graph}.sssp.source-vertex").data)
     list_of_supported_algorithms = configs.get(f"graph.{graph}.algorithms").data
-    weighted = "sssp" in list_of_supported_algorithms
+    if "sssp" in list_of_supported_algorithms:
+        weighted = True
+        sssp_source_vertex = int(configs.get(f"graph.{graph}.sssp.source-vertex").data)
+    else:
+        weighted = False
 
 
 init_tables(con, data_directory, graph, directed, weighted)
 
 bfs(con, bfs_source_vertex)
+cdlp(con, cdlp_max_iterations)
 pr(con, pr_damping_factor, pr_num_iterations)
-sssp(con, sssp_source_vertex)
+if sssp:
+    sssp(con, sssp_source_vertex)
 wcc(con)
 lcc(con)
-cdlp(con, cdlp_max_iterations)
