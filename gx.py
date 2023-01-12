@@ -125,7 +125,7 @@ for i in range(1, cdlp_iterations+1):
             ROW_NUMBER() OVER (PARTITION BY u.source ORDER BY count(*) DESC, cdlp{i-1}.label ASC) AS seqnum
         FROM u
         LEFT JOIN cdlp{i-1}
-          ON cdlp{i-1}.id = u.target
+               ON cdlp{i-1}.id = u.target
         GROUP BY
             u.source,
             cdlp{i-1}.label
