@@ -26,10 +26,12 @@ def init_tables(con, data_directory, graph, directed, weighted):
     # - for directed graphs, it is an actual table
     # - for undirected ones, it is just a view on table e
     if directed:
+        # create table 'u' for accessing an undirected view of the edges
         con.execute(f"CREATE TABLE u (target INTEGER, source INTEGER{weight_attribute_with_type})")
         con.execute(f"COPY u (target, source{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
         con.execute(f"COPY u (source, target{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
     else:
+        # copy reverse edges to 'e'
         con.execute(f"COPY e (target, source{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
         con.execute(f"CREATE VIEW u AS SELECT source, target{weight_attribute_without_type} FROM e")
 
