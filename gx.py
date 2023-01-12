@@ -1,4 +1,5 @@
 import duckdb
+import argparse
 import random
 import os
 
@@ -369,6 +370,11 @@ def wcc(con):
         print(result)
     con.execute(f"COPY (SELECT * FROM ccresult ORDER BY v) TO 'scratch/WCC.csv' (DELIMITER ' ', HEADER false);")
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--directed', type=bool, help='Denotes whether the graph is directed', required=True)
+parser.add_argument('--weighted', type=bool, help='Denotes whether the graph is weighted', required=True)
+args = parser.parse_args()
 
 
 memory = True
