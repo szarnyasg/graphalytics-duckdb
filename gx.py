@@ -26,14 +26,15 @@ def init_tables(con, data_directory, graph, directed, weighted):
     # - for directed graphs, it is an actual table
     # - for undirected ones, it is just a view on table e
     if directed:
-        # create table 'u' for accessing an undirected view of the edges
-        con.execute(f"CREATE TABLE u (target INTEGER, source INTEGER{weight_attribute_with_type})")
-        con.execute(f"COPY u (target, source{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
-        con.execute(f"COPY u (source, target{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
+        # keep 'e' directed and create table 'u' for accessing an undirected view of the edges
+        con.execute(f"CREATE TABLE u (source INTEGER, target INTEGER)")
+        con.execute(f"INSERT INTO u SELECT target, source FROM e")
+        con.execute(f"INSERT INTO u SELECT source, target FROM e")
     else:
         # copy reverse edges to 'e'
-        con.execute(f"COPY e (target, source{weight_attribute_without_type}) FROM '{data_directory}/{graph}.e' (DELIMITER ' ', FORMAT csv)")
-        con.execute(f"CREATE VIEW u AS SELECT source, target{weight_attribute_without_type} FROM e")
+        con.execute(f"INSERT INTO e SELECT target, source{weight_attribute_without_type} FROM e")
+        # 'u' is just a projection on top of 'e'
+        con.execute(f"CREATE VIEW u AS SELECT source, target FROM e")
 
 
 def bfs(con, bfs_source_vertex):
@@ -213,6 +214,7 @@ def sssp(con, sssp_source_vertex):
     # add 0-length loop edges
     con.execute(f"INSERT INTO e SELECT id, id, 0.0 FROM v")
 
+    # Bellman-Ford algorithm in SQL
     while True:
         con.execute(f"""
             CREATE TABLE d2 AS
