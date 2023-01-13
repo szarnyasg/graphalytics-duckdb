@@ -12,9 +12,8 @@ Revise the paths in the Python scripts and run.
 
 ## axplusb
 
-Grab the `axplusby` DuckDB fork from <https://github.com/szarnyasg/duckdb/tree/axplusb> and install:
+Grab the [`axplusb` branch](https://github.com/szarnyasg/duckdb/tree/axplusb) from Gabor's DuckDB fork and install it:
 
 ```bash
-cd tools/pythonpkg
-python3 setup.py install
+scripts/install-duckdb-axplusb.sh
 ```

@@ -8,6 +8,8 @@ from jproperties import Properties
 def init_tables(con, data_directory, graph, directed, weighted):
     print("Loading")
     ## graph tables
+    # new DuckDB CSV loader
+    #con.execute(f"SET experimental_parallel_csv=true")
     con.execute(f"CREATE TABLE v (id INTEGER)")
     if weighted:
         weight_attribute_without_type = ", weight"
